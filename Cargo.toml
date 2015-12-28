@@ -1,0 +1,4 @@
+[package]
+name = "bitbit"
+version = "0.1.0"
+authors = ["Robert Norris <robn@robn.io>"]
