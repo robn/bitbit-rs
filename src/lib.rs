@@ -9,6 +9,8 @@
 //! let is_one = try!(br.read_bit());
 //!
 //! let byte = try!(br.read_byte());
+//!
+//! let num = try!(br.read_bits(5));
 //! ```
 //!
 //! # Writing
@@ -20,6 +22,8 @@
 //! try!(br.write_bit(true));
 //!
 //! try!(br.write_byte(0x55));
+//!
+//! try!(br.write_bits(0x15, 5));
 //! ```
 
 pub mod reader;

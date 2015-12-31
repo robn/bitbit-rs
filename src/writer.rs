@@ -67,10 +67,28 @@ impl<W: Write> BitWriter<W> {
     /// ```ignore
     /// try!(br.write_byte(byte: u8));
     /// ```
-    pub fn write_byte(&mut self, mut byte: u8) -> Result<()> {
-        for _ in 0..8 {
-            try!(self.write_bit(byte & 0x80 != 0));
-            byte = byte << 1;
+    pub fn write_byte(&mut self, byte: u8) -> Result<()> {
+        Ok(try!(self.write_bits(byte as u32, 8)))
+    }
+
+    /// Writes a number of bits from a `u32` to `BitWriter<T>`. Will not write more than 32 bits.
+    ///
+    /// # Arguments
+    ///
+    /// val - the value containing the bits to write
+    /// nbits - the number of bits to write
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// try!(br.write_bits(0x15, 5));
+    /// ```
+    pub fn write_bits(&mut self, mut val: u32, mut nbits: usize) -> Result<()> {
+        if nbits > 32 { nbits = 32 }
+        let mask: u32 = 1 << nbits-1;
+        for _ in 0..nbits {
+            try!(self.write_bit(val & mask != 0));
+            val = val << 1;
         }
         Ok(())
     }
@@ -133,5 +151,16 @@ mod test {
         bw.write_byte(0xaa).unwrap();
 
         assert_eq!(*bw.get_ref().get_ref(), [0x55,0xaa,0x55,0xaa]);
+    }
+
+    #[test]
+    pub fn write_bits() {
+        let w = Cursor::new(vec![0; 1]);
+        let mut bw = BitWriter::new(w);
+
+        bw.write_bits(0x2, 3).unwrap();
+        bw.write_bits(0x15, 5).unwrap();
+
+        assert_eq!(*bw.get_ref().get_ref(), [0x55]);
     }
 }

@@ -57,14 +57,30 @@ impl<R: Read> BitReader<R> {
     /// let byte = try!(br.read_byte());
     /// ```
     pub fn read_byte(&mut self) -> Result<u8> {
-        let mut byte: u8 = 0;
-        for _ in 0..8 {
-            byte = byte << 1;
+        Ok(try!(self.read_bits(8)) as u8)
+    }
+
+    /// Read a number of bits from a `BitReader<R>` and return them in a `u32`. Will not read more
+    /// than 32 bits.
+    ///
+    /// # Arguments
+    ///
+    /// * bits - number of bits to read
+    ///
+    /// # Examples
+    /// ```ignore
+    /// let num = try!(br.read_bits(5));
+    /// ```
+    pub fn read_bits(&mut self, mut nbits: usize) -> Result<u32> {
+        if nbits > 32 { nbits = 32 }
+        let mut out: u32 = 0;
+        for _ in 0..nbits {
+            out = out << 1;
             if try!(self.read_bit()) {
-                byte = byte | 0x1;
+                out = out | 0x1;
             }
         }
-        Ok(byte)
+        Ok(out)
     }
 
     /// Gets a reference to the underlying stream.
@@ -135,6 +151,17 @@ mod test {
         assert_eq!(br.read_bit().unwrap(), false);
         assert_eq!(br.read_bit().unwrap(), true);
         assert_eq!(br.read_bit().unwrap(), false);
+
+        assert_eof!(br);
+    }
+
+    #[test]
+    pub fn read_bits() {
+        let r = Cursor::new(vec![0x55]);
+        let mut br = BitReader::new(r);
+
+        assert_eq!(br.read_bits(3).unwrap(), 0x2);
+        assert_eq!(br.read_bits(5).unwrap(), 0x15);
 
         assert_eof!(br);
     }
