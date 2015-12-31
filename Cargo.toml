@@ -1,6 +1,6 @@
 [package]
 name = "bitbit"
-version = "0.1.0"
+version = "0.1.1"
 description = "Bit-at-a-time reader/writer types"
 license = "MIT"
 authors = ["Robert Norris <robn@robn.io>"]
