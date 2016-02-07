@@ -27,7 +27,7 @@
 //! ```
 
 pub mod reader;
-pub use reader::BitReader;
+pub use reader::{BitReader,MSB,LSB};
 
 pub mod writer;
 pub use writer::BitWriter;
