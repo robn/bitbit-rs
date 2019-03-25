@@ -3,7 +3,7 @@
 //! # Reading
 //!
 //! ```rust, ignore
-//! let r = File::open("./example.txt");
+//! let r = File::open("somefile")?;
 //! let mut br = BitReader::new(r);
 //!
 //! let is_one = br.read_bit()?;
