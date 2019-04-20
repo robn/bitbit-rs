@@ -147,8 +147,13 @@ impl<R: Read, B: Bit> BitReader<R, B> {
     }
 
     /// Gets a reference to the underlying stream.
-    pub fn get_ref(&mut self) -> &R {
+    pub fn get_ref(&self) -> &R {
         &self.r
+    }
+
+    /// Gets a mutable reference to the underlying stream.
+    pub fn get_mut(&mut self) -> &mut R {
+        &mut self.r
     }
 }
 

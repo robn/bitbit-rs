@@ -94,8 +94,13 @@ impl<W: Write> BitWriter<W> {
     }
 
     /// Gets a reference to the underlying stream.
-    pub fn get_ref(&mut self) -> &W {
+    pub fn get_ref(&self) -> &W {
         &self.w
+    }
+
+    /// Gets a mutable reference to the underlying stream.
+    pub fn get_mut(&mut self) -> &mut W{
+        &mut self.w
     }
 
     /// Zero pads current byte to end.
