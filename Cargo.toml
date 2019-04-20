@@ -6,3 +6,4 @@ description = "Bit-at-a-time reader/writer types"
 license = "MIT"
 authors = ["Robert Norris <robn@robn.io>"]
 repository  = "https://github.com/robn/bitbit-rs"
+keywords = ["bit", "bits", "bitreader", "bitwriter", "bitstream"]
