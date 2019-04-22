@@ -155,6 +155,16 @@ impl<R: Read, B: Bit> BitReader<R, B> {
     pub fn get_mut(&mut self) -> &mut R {
         &mut self.r
     }
+
+    /// The opposite functionality of pad_to_byte.
+    /// If any bits in the current byte have been read this function
+    /// returns the value of the remaining bits and by doing so skips to the start of the next byte boundary.
+    pub fn read_to_byte(&mut self) -> Result<u32> {
+        if self.shift != 0 {
+            return Ok(self.read_bits(8 - self.shift)?);
+        }
+        Ok(0)
+    }
 }
 
 #[cfg(test)]
@@ -269,5 +279,18 @@ mod test {
         assert_eq!(br.read_bits(5).unwrap(), 0xa);
 
         assert_eof!(br);
+    }
+
+    #[test]
+    pub fn read_bits_padding() {
+        let r = Cursor::new(vec![0b10011001, 0b10001001]);
+        let mut br: BitReader<_, MSB> = BitReader::new(r);
+        assert_eq!(br.read_to_byte().unwrap(), 0);
+        assert_eq!(br.read_bits(3).unwrap(), 4);
+        assert_eq!(br.read_to_byte().unwrap(), 25);
+        assert_eq!(br.read_to_byte().unwrap(), 0);
+        assert_eq!(br.read_bits(4).unwrap(), 8);
+        assert_eq!(br.read_bits(3).unwrap(), 4);
+        assert_eq!(br.read_to_byte().unwrap(), 1);
     }
 }
