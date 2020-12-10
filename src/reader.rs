@@ -160,7 +160,7 @@ impl<R: Read, B: Bit> BitReader<R, B> {
     /// If any bits in the current byte have been read this function
     /// returns the value of the remaining bits and by doing so skips to the start of the next byte boundary.
     pub fn read_to_byte(&mut self) -> Result<u32> {
-        if self.shift != 0 {
+        if self.shift != 0 && self.shift != 8 {
             return Ok(self.read_bits(8 - self.shift)?);
         }
         Ok(0)
@@ -282,7 +282,7 @@ mod test {
     }
 
     #[test]
-    pub fn read_bits_padding() {
+    pub fn read_bits_padding_msb() {
         let r = Cursor::new(vec![0b10011001, 0b10001001]);
         let mut br: BitReader<_, MSB> = BitReader::new(r);
         assert_eq!(br.read_to_byte().unwrap(), 0);
@@ -291,6 +291,19 @@ mod test {
         assert_eq!(br.read_to_byte().unwrap(), 0);
         assert_eq!(br.read_bits(4).unwrap(), 8);
         assert_eq!(br.read_bits(3).unwrap(), 4);
+        assert_eq!(br.read_to_byte().unwrap(), 1);
+    }
+
+    #[test]
+    pub fn read_bits_padding_lsb() {
+        let r = Cursor::new(vec![0b10011001, 0b10001001]);
+        let mut br: BitReader<_, LSB> = BitReader::new(r);
+        assert_eq!(br.read_to_byte().unwrap(), 0);
+        assert_eq!(br.read_bits(3).unwrap(), 1);
+        assert_eq!(br.read_to_byte().unwrap(), 19);
+        assert_eq!(br.read_to_byte().unwrap(), 0);
+        assert_eq!(br.read_bits(4).unwrap(), 9);
+        assert_eq!(br.read_bits(3).unwrap(), 0);
         assert_eq!(br.read_to_byte().unwrap(), 1);
     }
 }
