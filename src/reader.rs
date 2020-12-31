@@ -53,9 +53,13 @@ impl Bit for LSB {
         word | 0x80000000
     }
 
+    // `nbits == 0` causes overflow error because of
+    // architecture specific overflow behavior.
+    // otherwise `word >> 32 - nbits` would suffice.
+    // Caused when `read_bits(0)`.
     #[inline(always)]
     fn shift_into_place(word: u32, nbits: usize) -> u32 {
-        word >> 32 - nbits
+        word.checked_shr((32 - nbits) as u32).unwrap_or(0)
     }
 }
 
@@ -338,6 +342,12 @@ mod test {
         assert_eof!(br);
     }
 
+    #[test]
+    pub fn read_bits_0_lsb_no_error() {
+        let r = Cursor::new(vec![0b10011001, 0b10001001]);
+        let mut br: BitReader<_, LSB> = BitReader::new(r);
+        assert_eq!(br.read_bits(0).unwrap(), 0);
+    }
 
     #[test]
     pub fn read_get_mut() {
