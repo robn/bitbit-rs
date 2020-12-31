@@ -1,4 +1,4 @@
-use std::io::*;
+use std::io::{Error, ErrorKind, Read, Result};
 use std::marker::PhantomData;
 
 pub trait Bit {

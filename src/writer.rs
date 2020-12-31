@@ -1,4 +1,4 @@
-use std::io::*;
+use std::io::{Error, ErrorKind, Result, Write};
 
 /// A `BitWriter` gives a way to write single bits to a stream.
 pub struct BitWriter<W: Write> {
