@@ -1,4 +1,4 @@
-use std::io::*;
+use std::io::{Error, ErrorKind, Read, Result};
 use std::marker::PhantomData;
 
 pub trait Bit {
@@ -53,9 +53,13 @@ impl Bit for LSB {
         word | 0x80000000
     }
 
+    // `nbits == 0` causes overflow error because of
+    // architecture specific overflow behavior.
+    // otherwise `word >> 32 - nbits` would suffice.
+    // Caused when `read_bits(0)`.
     #[inline(always)]
     fn shift_into_place(word: u32, nbits: usize) -> u32 {
-        word >> 32 - nbits
+        word.checked_shr((32 - nbits) as u32).unwrap_or(0)
     }
 }
 
@@ -134,7 +138,9 @@ impl<R: Read, B: Bit> BitReader<R, B> {
     /// let num = br.read_bits(5)?;
     /// ```
     pub fn read_bits(&mut self, mut nbits: usize) -> Result<u32> {
-        if nbits > 32 { nbits = 32 }
+        if nbits > 32 {
+            nbits = 32
+        }
         let mut out: u32 = 0;
         for _ in 0..nbits {
             out = B::shift_bit(out);
@@ -146,16 +152,63 @@ impl<R: Read, B: Bit> BitReader<R, B> {
         Ok(out)
     }
 
+    /// Unwraps this `BitReader<R, _>`, returning the underlying source.
+    ///
+    /// Note that any leftover bits in the internal buffer is lost.
+    pub fn into_inner(self) -> R {
+        self.r
+    }
+
     /// Gets a reference to the underlying stream.
-    pub fn get_ref(&mut self) -> &R {
+    pub fn get_ref(&self) -> &R {
         &self.r
+    }
+
+    /// Gets a mutable reference to the underlying stream.
+    ///
+    /// Since the underlying stream is consumed byte-at-a-time
+    /// it can only safely be retrieved when at a byte boundary.
+    /// Call `read_to_byte()` before `get_mut()`. Should be called
+    /// before attempting to retrieve a mutable reference to the
+    /// underlying stream.
+    pub fn get_mut(&mut self) -> Result<&mut R> {
+        if self.is_aligned() {
+            Ok(&mut self.r)
+        } else {
+            Err(Error::new(
+                ErrorKind::Other,
+                "Underlying stream not aligned with bitreader. \
+                 Call `read_to_byte()` before attempting to get \
+                  a mutable reference to the underlying stream.\n\
+                  Use `is_aligned()` to check if bitreader is able to `get_mut()`",
+            ))
+        }
+    }
+
+    /// The opposite functionality of pad_to_byte.
+    /// If any bits in the current byte have been read this function
+    /// returns the value of the remaining bits and by doing so skips to the start of the next byte boundary.
+    pub fn read_to_byte(&mut self) -> Result<u32> {
+        if !self.is_aligned() {
+            return Ok(self.read_bits(8 - self.shift)?);
+        }
+        Ok(0)
+    }
+
+    /// Returns whether the current bitreader is aligned to the byte boundary.
+    ///
+    /// Shift value of `8` would mean we have read 8 bits but have not consumed
+    /// the next byte from the underlying stream. `0` means we haven't read
+    /// anything but we have consumed the next byte.
+    pub fn is_aligned(&self) -> bool {
+        self.shift == 8
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::io::{Cursor, ErrorKind};
     use super::*;
+    use std::io::{Cursor, ErrorKind};
 
     macro_rules! assert_eof {
         ($br: ident) => {
@@ -166,7 +219,7 @@ mod test {
                 },
                 v => panic!("Expected EOF, got: {:?}", v),
             }
-        }
+        };
     }
 
     #[test]
@@ -262,6 +315,84 @@ mod test {
 
         assert_eq!(br.read_bits(3).unwrap(), 0x5);
         assert_eq!(br.read_bits(5).unwrap(), 0xa);
+
+        assert_eof!(br);
+    }
+
+    #[test]
+    pub fn read_bits_padding_msb() {
+        let r = Cursor::new(vec![0b10011001, 0b10001001]);
+        let mut br: BitReader<_, MSB> = BitReader::new(r);
+        assert_eq!(br.read_to_byte().unwrap(), 0);
+        assert_eq!(br.read_bits(3).unwrap(), 4);
+        assert_eq!(br.read_to_byte().unwrap(), 25);
+        assert_eq!(br.read_to_byte().unwrap(), 0);
+        assert_eq!(br.read_bits(4).unwrap(), 8);
+        assert_eq!(br.read_bits(3).unwrap(), 4);
+        assert_eq!(br.read_to_byte().unwrap(), 1);
+
+        assert_eof!(br);
+    }
+
+    #[test]
+    pub fn read_bits_padding_lsb() {
+        let r = Cursor::new(vec![0b10011001, 0b10001001]);
+        let mut br: BitReader<_, LSB> = BitReader::new(r);
+        assert_eq!(br.read_to_byte().unwrap(), 0);
+        assert_eq!(br.read_bits(3).unwrap(), 1);
+        assert_eq!(br.read_to_byte().unwrap(), 19);
+        assert_eq!(br.read_to_byte().unwrap(), 0);
+        assert_eq!(br.read_bits(4).unwrap(), 9);
+        assert_eq!(br.read_bits(3).unwrap(), 0);
+        assert_eq!(br.read_to_byte().unwrap(), 1);
+
+        assert_eof!(br);
+    }
+
+    #[test]
+    pub fn read_bits_0_lsb_no_error() {
+        let r = Cursor::new(vec![0b10011001, 0b10001001]);
+        let mut br: BitReader<_, LSB> = BitReader::new(r);
+        assert_eq!(br.read_bits(0).unwrap(), 0);
+    }
+
+    #[test]
+    pub fn read_get_mut() {
+        let r = Cursor::new(vec![0b10011001, 0b10101001, 0b11111001, 0b01100101]);
+        let mut br: BitReader<_, MSB> = BitReader::new(r);
+        let mut buf = vec![0u8; 1];
+
+        assert!(br.get_mut().is_ok());
+        assert!(br.is_aligned());
+
+        br.get_mut().unwrap().read(&mut buf).unwrap();
+        assert_eq!(buf, [0b10011001]);
+
+        // Reading 3 bits consumes an internal byte, so the next call
+        // to read will start at the next byte boundary.
+        assert_eq!(br.read_bits(3).unwrap(), 0b101);
+
+        // Check that we are currently unaligned.
+        assert!(!br.is_aligned());
+        assert!(br.get_mut().is_err());
+        assert!(matches!(
+            br.get_mut().err().unwrap().kind(),
+            ErrorKind::Other
+        ));
+
+        // In order for the last line of the test to be successful
+        // you need to read_to_byte, otherwise we will read old values.
+        br.read_to_byte().unwrap();
+
+        assert!(br.get_mut().is_ok());
+        assert!(br.is_aligned());
+
+        br.get_mut().unwrap().read(&mut buf).unwrap();
+        assert_eq!(buf, [0b11111001]);
+
+        // without the previous read_to_byte this would fail
+        assert_eq!(br.read_bits(4).unwrap(), 0b0110);
+        assert_eq!(br.read_to_byte().unwrap(), 0b101);
 
         assert_eof!(br);
     }

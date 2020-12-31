@@ -1,4 +1,4 @@
-use std::io::*;
+use std::io::{Error, ErrorKind, Result, Write};
 
 /// A `BitWriter` gives a way to write single bits to a stream.
 pub struct BitWriter<W: Write> {
@@ -84,7 +84,9 @@ impl<W: Write> BitWriter<W> {
     /// bw.write_bits(0x15, 5)?;
     /// ```
     pub fn write_bits(&mut self, mut val: u32, mut nbits: usize) -> Result<()> {
-        if nbits > 32 { nbits = 32 }
+        if nbits > 32 {
+            nbits = 32
+        }
         let mask: u32 = (1 << nbits - 1) as u32;
         for _ in 0..nbits {
             self.write_bit(val & mask != 0)?;
@@ -93,25 +95,60 @@ impl<W: Write> BitWriter<W> {
         Ok(())
     }
 
+    /// Unwraps this `BitWriter<W>`, returning the underlying writer.
+    ///
+    /// The internal bit buffer is written out before returning the writer.
+    /// This is done using `pad_to_byte()`.
+    pub fn into_inner(mut self) -> Result<W> {
+        self.pad_to_byte()?;
+        Ok(self.w)
+    }
+
     /// Gets a reference to the underlying stream.
-    pub fn get_ref(&mut self) -> &W {
+    pub fn get_ref(&self) -> &W {
         &self.w
     }
 
+    /// Gets a mutable reference to the underlying stream.
+    ///
+    /// Since the underlying stream is written byte-at-a-time
+    /// it can only safely be retrieved when
+    /// at a byte boundary. Call `pad_to_byte()` before `get_mut()`.
+    pub fn get_mut(&mut self) -> Result<&mut W> {
+        if self.is_aligned() {
+            Ok(&mut self.w)
+        } else {
+            Err(Error::new(
+                ErrorKind::Other,
+                "Underlying stream not aligned with bitwriter. \
+                 Call `pad_to_byte()` before attempting to get \
+                  a mutable reference to the underlying stream.\n\
+                  Use `is_aligned()` to check if bitwriter is able to `get_mut()`",
+            ))
+        }
+    }
+
     /// Zero pads current byte to end.
-    /// Used when finished writing bits to a stream to ensure the content of last byte is written.
+    /// Used when finished writing bits to a stream to ensure
+    /// the content of last byte is written. Should be called before
+    /// attempting to retrieve a mutable reference to the underlying stream.
     pub fn pad_to_byte(&mut self) -> Result<()> {
-        if self.shift != 0 {
+        if !self.is_aligned() {
             self.write_bits(0, 8 - self.shift)?;
         }
         Ok(())
+    }
+
+    /// Returns whether the current bitwriter is aligned to the byte boundary.
+    pub fn is_aligned(&self) -> bool {
+        self.shift == 0
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::io::Cursor;
     use super::*;
+    use std::io::Cursor;
 
     #[test]
     pub fn write_bit() {
@@ -195,5 +232,49 @@ mod test {
         check[3] = 0x80;
 
         assert_eq!(*bw.get_ref().get_ref(), check);
+    }
+
+    #[test]
+    pub fn write_get_mut_ref() {
+        let w = Cursor::new(vec![0; 3]);
+        let mut bw = BitWriter::new(w);
+
+        assert!(bw.is_aligned());
+        assert!(bw.get_mut().is_ok());
+
+        bw.get_mut().unwrap().write(&vec![12u8]).unwrap();
+        assert_eq!(bw.get_ref().get_ref(), &[12, 0, 0]);
+
+        assert!(bw.is_aligned());
+        assert!(bw.get_mut().is_ok());
+
+        // Writing 4 bits only writes to the internal buffer
+        // so the underlying stream has seen no change
+        bw.write_bits(0b1010, 4).unwrap();
+
+        assert!(!bw.is_aligned());
+        assert!(bw.get_mut().is_err());
+
+        // this will fill in the data so if the underlying
+        // stream is changed the data wont be lost.
+        bw.pad_to_byte().unwrap();
+
+        bw.get_mut().unwrap().write(&vec![14u8]).unwrap();
+        assert_eq!(bw.get_ref().get_ref(), &[12, 160, 14]);
+
+        assert!(bw.is_aligned());
+        assert!(bw.get_mut().is_ok());
+    }
+
+    #[test]
+    pub fn write_into_inner() {
+        let w = Cursor::new(vec![0; 1]);
+        let bw = BitWriter::new(w);
+        let w = bw.into_inner().unwrap();
+        assert_eq!(w.get_ref(), &[0]);
+        let mut bw = BitWriter::new(w);
+        bw.write_bit(true).unwrap();
+        let w = bw.into_inner().unwrap();
+        assert_eq!(w.get_ref(), &[128]);
     }
 }
