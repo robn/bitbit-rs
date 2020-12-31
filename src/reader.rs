@@ -152,6 +152,13 @@ impl<R: Read, B: Bit> BitReader<R, B> {
         Ok(out)
     }
 
+    /// Unwraps this `BitReader<R, _>`, returning the underlying source.
+    ///
+    /// Note that any leftover bits in the internal buffer is lost.
+    pub fn into_inner(self) -> R {
+        self.r
+    }
+
     /// Gets a reference to the underlying stream.
     pub fn get_ref(&self) -> &R {
         &self.r

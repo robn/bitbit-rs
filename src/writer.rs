@@ -95,6 +95,15 @@ impl<W: Write> BitWriter<W> {
         Ok(())
     }
 
+    /// Unwraps this `BitWriter<W>`, returning the underlying writer.
+    ///
+    /// The internal bit buffer is written out before returning the writer.
+    /// This is done using `pad_to_byte()`.
+    pub fn into_inner(mut self) -> Result<W> {
+        self.pad_to_byte()?;
+        Ok(self.w)
+    }
+
     /// Gets a reference to the underlying stream.
     pub fn get_ref(&self) -> &W {
         &self.w
@@ -255,5 +264,17 @@ mod test {
 
         assert!(bw.is_aligned());
         assert!(bw.get_mut().is_ok());
+    }
+
+    #[test]
+    pub fn write_into_inner() {
+        let w = Cursor::new(vec![0; 1]);
+        let bw = BitWriter::new(w);
+        let w = bw.into_inner().unwrap();
+        assert_eq!(w.get_ref(), &[0]);
+        let mut bw = BitWriter::new(w);
+        bw.write_bit(true).unwrap();
+        let w = bw.into_inner().unwrap();
+        assert_eq!(w.get_ref(), &[128]);
     }
 }
