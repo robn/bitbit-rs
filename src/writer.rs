@@ -98,6 +98,9 @@ impl<W: Write> BitWriter<W> {
         &self.w
     }
 
+    /// Consumes the writer, returning the underlying stream.
+    pub fn take(self) -> W { self.w }
+
     /// Zero pads current byte to end.
     /// Used when finished writing bits to a stream to ensure the content of last byte is written.
     pub fn pad_to_byte(&mut self) -> Result<()> {
